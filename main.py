@@ -72,7 +72,7 @@ def run_pipeline():
         for excel_path in arquivos_excel:
             nome_excel = os.path.basename(excel_path)
             print(f" -> Enviando: {nome_excel}")
-            upload_file(service, output_folder_id, excel_path, nome_excel)
+            upload_file(service, processed_folder_id, excel_path, nome_excel)
     else:
         print("\nNenhum arquivo Excel gerado.")
 
@@ -81,7 +81,7 @@ def run_pipeline():
         print("\n--- Movendo arquivos lidos para 'Processadas' no Drive ---")
         for item in arquivos_drive:
             print(f" -> Movendo: {item['name']}")
-            move_file(service, item['id'], input_folder_id, processed_folder_id)
+            move_file(service, item['id'], input_folder_id, output_folder_id)
 
     # 6. Limpeza do ambiente temporário
     shutil.rmtree(PASTA_TMP_ENTRADA, ignore_errors=True)
