@@ -1,0 +1,7 @@
+pdfplumber
+pandas
+tqdm
+xlsxwriter
+ofxparse
+google-api-python-client
+google-auth
