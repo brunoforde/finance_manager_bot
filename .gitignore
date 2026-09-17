@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# General Security
+*.pdf
+*.csv
+*.json
+.env
+__pycache__/
+.venv/
