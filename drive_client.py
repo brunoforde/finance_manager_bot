@@ -15,8 +15,16 @@ def get_drive_service():
     return build('drive', 'v3', credentials=creds)
 
 def list_files(service, folder_id):
-    query = f"'{folder_id}' in parents and trashed=false"
-    results = service.files().list(q=query, fields="files(id, name)").execute()
+    """Lista apenas arquivos válidos, ignorando pastas ou itens na lixeira."""
+    query = (
+        f"'{folder_id}' in parents and "
+        f"trashed = false and "
+        f"mimeType != 'application/vnd.google-apps.folder'"
+    )
+    results = service.files().list(
+        q=query, 
+        fields="files(id, name, mimeType)"
+    ).execute()
     return results.get('files', [])
 
 def download_file(service, file_id, destination_path):
@@ -37,3 +45,12 @@ def upload_file(service, folder_id, file_path, file_name):
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
     )
     service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+
+def move_file(service, file_id, current_folder_id, target_folder_id):
+    """Move um arquivo da pasta de entrada para a pasta de processadas no Drive."""
+    service.files().update(
+        fileId=file_id,
+        addParents=target_folder_id,
+        removeParents=current_folder_id,
+        fields='id, parents'
+    ).execute()
