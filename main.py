@@ -9,11 +9,11 @@ PASTA_TMP_ENTRADA = "./temp_entrada"
 
 def run_pipeline():
     input_folder_id = os.environ.get("DRIVE_INPUT_FOLDER_ID")
-    output_folder_id = os.environ.get("DRIVE_OUTPUT_FOLDER_ID")
+    report_output_folder_id = os.environ.get("DRIVE_REPORT_OUTPUT_FOLDER_ID")
     processed_folder_id = os.environ.get("DRIVE_PROCESSED_FOLDER_ID")
     tipo_processamento = os.environ.get("TIPO_PROCESSAMENTO", "todos")
 
-    if not input_folder_id or not output_folder_id:
+    if not input_folder_id or not report_output_folder_id:
         print("[ERRO] Variáveis de ambiente obrigatórias não configuradas.")
         return
 
@@ -72,7 +72,7 @@ def run_pipeline():
         for excel_path in arquivos_excel:
             nome_excel = os.path.basename(excel_path)
             print(f" -> Enviando: {nome_excel}")
-            upload_file(service, output_folder_id, excel_path, nome_excel)
+            upload_file(service, report_output_folder_id, excel_path, nome_excel)
     else:
         print("\nNenhum arquivo Excel gerado.")
 
@@ -81,7 +81,7 @@ def run_pipeline():
         print("\n--- Movendo arquivos lidos para 'Processadas' no Drive ---")
         for item in arquivos_drive:
             print(f" -> Movendo: {item['name']}")
-            move_file(service, item['id'], input_folder_id, output_folder_id)
+            move_file(service, item['id'], input_folder_id, processed_folder_id)
 
     # 6. Limpeza do ambiente temporário
     shutil.rmtree(PASTA_TMP_ENTRADA, ignore_errors=True)
