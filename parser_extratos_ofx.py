@@ -7,10 +7,10 @@ import io
 from ofxparse import OfxParser
 from tqdm import tqdm
 
-# --- CONFIGURAÇÕES ---
+# ### Configs ###
 
-PASTA_ENTRADA = os.getenv(".")
-PASTA_SAIDA = os.getenv(".")
+PASTA_ENTRADA = "." # Removed the path to use the current folder for the running
+PASTA_SAIDA = "."
 
 CATEGORIAS_DICT = {
     'Alimentação/Lazer': [
@@ -47,12 +47,11 @@ def definir_categoria(descricao):
     return "Outros"
 
 def ler_ofx_seguro(caminho_arquivo):
-    # 1. Lê o arquivo como bytes brutos (sem tentar decodificar ainda)
+    # 1. Opening the file
     with open(caminho_arquivo, 'rb') as f:
         raw_bytes = f.read()
         
-    # 2. Tenta decodificar. Se der o erro do 0xc1 (UnicodeDecodeError), 
-    # sabemos que o banco enviou como Latin-1.
+    # 2. Trying to decode and in case of error mark the enconding as latin-1 which is the other possibility mapped
     try:
         conteudo = raw_bytes.decode('utf-8')
     except UnicodeDecodeError:
@@ -69,10 +68,10 @@ def ler_ofx_seguro(caminho_arquivo):
         elif ':' in linha and not linha.startswith('<'):
             chave, valor = linha.split(':', 1)
             chave = chave.strip()
-            # Remove os espaços em branco que quebram a leitura
+            # Remove empty spaces (which could brake the extraction or give wrong data)
             valor = valor.strip().replace(' ', '')
             
-            # Força o cabeçalho a dizer a verdade: vamos converter tudo para UTF-8 real
+            # Convert to UTF-8
             if chave == 'ENCODING':
                 valor = 'UTF-8'
                 
@@ -86,8 +85,7 @@ def ler_ofx_seguro(caminho_arquivo):
     
     return OfxParser.parse(arquivo_memoria)
     
-    # 3. O pulo do gato: Transforma o texto corrigido de volta em bytes, 
-    # mas agora garantindo que seja um UTF-8 real e perfeito.
+    # 3. Convert data back to bytes after ensuring it's in utf-8 encoding
     arquivo_memoria = io.BytesIO(conteudo_final.encode('utf-8'))
     
     return OfxParser.parse(arquivo_memoria)
@@ -124,9 +122,10 @@ def processar_ofx():
             ofx = ler_ofx_seguro(arquivo)
             conta = ofx.account
             banco_nome = conta.institution.organization if conta.institution else "Banco Desconhecido"
-            
+
+            # Code deprecated, used to validate the final results
             # =====================================================================
-            # CÓDIGO COMENTADO: EXTRAÇÃO DO SALDO FINAL DO EXTRATO
+            # EXTRAÇÃO DO SALDO FINAL DO EXTRATO - Total balance extraction
             # =====================================================================
             # saldo_final = conta.statement.balance
             # data_saldo = conta.statement.balance_date
@@ -134,13 +133,12 @@ def processar_ofx():
             # =====================================================================
 
             for transacao in conta.statement.transactions:
-                # Mantendo o sinal original do OFX: Positivo = Entrada, Negativo = Saída
+                # Keep original signals from the files ([+] -> Inflow; [-] -> Outflow)
                 valor_ofx = float(transacao.amount)
                 tipo = "Entrada" if valor_ofx > 0 else "Saída"
                 descricao = transacao.memo.strip()
                 cat = definir_categoria(descricao)
 
-                # Mantém o objeto datetime puro (removendo fuso horário para não dar conflito no Excel)
                 data_real = transacao.date.replace(tzinfo=None)
 
                 todas_transacoes.append({
@@ -174,15 +172,16 @@ def processar_ofx():
             workbook = writer.book
             worksheet = writer.sheets['Extrato_Bancario']
             
-            # Formatações Visuais
+            # Format amount/values 
             money_fmt = workbook.add_format({'num_format': '#,##0.00'})
+            # Format date
             date_fmt = workbook.add_format({'num_format': 'dd/mm/yyyy'})
             
-            # Ajustando a largura e o formato das colunas
-            worksheet.set_column('A:A', 12, date_fmt)   # Coluna Data
-            worksheet.set_column('B:B', 35)             # Coluna Descrição (mais larga para caber os textos)
-            worksheet.set_column('C:C', 18)             # Coluna Categoria
-            worksheet.set_column('E:E', 15, money_fmt)  # Coluna Valor
+            # Set collumns layout in the spreadsheet
+            worksheet.set_column('A:A', 12, date_fmt)   # Date column
+            worksheet.set_column('B:B', 35)             # Description column
+            worksheet.set_column('C:C', 18)             # Category column
+            worksheet.set_column('E:E', 15, money_fmt)  # Amount column
         
         print(f"\n\nSucesso! Arquivo gerado: {output_file}")
         
