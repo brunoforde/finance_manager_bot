@@ -12,6 +12,7 @@ on:
           - 'todos'
           - 'faturas_cartao'
           - 'extratos_bancarios'
+          - 'santander_pdf'
 
 jobs:
   extract-and-process:
