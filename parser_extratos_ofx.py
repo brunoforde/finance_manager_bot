@@ -9,8 +9,8 @@ from tqdm import tqdm
 
 # --- CONFIGURAÇÕES ---
 
-PASTA_ENTRADA = "C:/Users/bruno.berlanga/Desktop/faturas/Extratos/Extratos Atuais"
-PASTA_SAIDA = "C:/Users/bruno.berlanga/Desktop/faturas/Extratos/Processados"
+PASTA_ENTRADA = os.getenv(".")
+PASTA_SAIDA = os.getenv(".")
 
 CATEGORIAS_DICT = {
     'Alimentação/Lazer': [
