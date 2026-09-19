@@ -4,6 +4,7 @@ import glob
 from drive_client import get_drive_service, list_files, download_file, upload_file, move_file
 import parser_faturas_cartao
 import parser_extratos_ofx
+import parser_extratos_santander_pdf
 
 PASTA_TMP_ENTRADA = "./temp_entrada"
 
@@ -65,7 +66,23 @@ def run_pipeline():
         else:
             print("\nNenhum arquivo .ofx encontrado para extratos.")
 
-    # 4. Upload dos relatórios gerados (.xlsx)
+    # 4. Processamento Histórico Santander (PDF)
+    if tipo_processamento in ["todos", "santander_pdf"]:
+        pdfs = glob.glob(os.path.join(PASTA_TMP_ENTRADA, "*.pdf"))
+        pdfs_santander = [p for p in pdfs if any(k in os.path.basename(p).lower() for k in ["santander", "comprovante"])]
+        
+        if pdfs_santander:
+            print(f"\n--- Processando {len(pdfs_santander)} extrato(s) Santander em PDF ---")
+            pasta_original = os.getcwd()
+            os.chdir(PASTA_TMP_ENTRADA)
+            try:
+                parser_extratos_santander_pdf.processar_extratos_santander()
+            finally:
+                os.chdir(pasta_original)
+        else:
+            print("Nenhum PDF do Santander identificado para processamento.")
+
+    # 5. Upload dos relatórios gerados (.xlsx)
     arquivos_excel = glob.glob(os.path.join(PASTA_TMP_ENTRADA, "*.xlsx"))
     if arquivos_excel:
         print(f"\n--- Enviando {len(arquivos_excel)} relatório(s) para o Google Drive ---")
@@ -76,14 +93,14 @@ def run_pipeline():
     else:
         print("\nNenhum arquivo Excel gerado.")
 
-    # 5. Mover arquivos originais para 'Processadas' no Drive
+    # 6. Mover arquivos originais para 'Processadas' no Drive
     if processed_folder_id and arquivos_excel:
         print("\n--- Movendo arquivos lidos para 'Processadas' no Drive ---")
         for item in arquivos_drive:
             print(f" -> Movendo: {item['name']}")
             move_file(service, item['id'], input_folder_id, processed_folder_id)
 
-    # 6. Limpeza do ambiente temporário
+    # 7. Limpeza do ambiente temporário
     shutil.rmtree(PASTA_TMP_ENTRADA, ignore_errors=True)
     print("\nProcesso concluído com sucesso!")
 
