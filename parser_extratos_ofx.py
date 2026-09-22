@@ -39,7 +39,7 @@ CATEGORIAS_DICT = {
 }
 
 def definir_categoria(descricao):
-    desc_upper = descricao.upper()
+    desc_upper = str(descricao).upper()
     for categoria, palavras_chave in CATEGORIAS_DICT.items():
         for palavra in palavras_chave:
             if palavra in desc_upper:
@@ -81,13 +81,19 @@ def ler_ofx_seguro(caminho_arquivo):
 
     conteudo_final = '\n'.join(linhas_corrigidas)
 
-    arquivo_memoria = io.BytesIO(conteudo_final.encode('utf-8'))
-    
-    return OfxParser.parse(arquivo_memoria)
-    
+    # Injeta LEDGERBAL dummy caso o banco (ex: Caixa) não envie a tag antes do fechamento
+    if "<LEDGERBAL>" not in conteudo_final.upper() and "</STMTRS>" in conteudo_final.upper():
+        dummy_bal = """
+<LEDGERBAL>
+<BALAMT>0.00</BALAMT>
+<DTASOF>20260101</DTASOF>
+</LEDGERBAL>
+</STMTRS>
+"""
+        conteudo_final = re.sub(r'</STMTRS>', dummy_bal, conteudo_final, flags=re.IGNORECASE)
+
     # 3. Convert data back to bytes after ensuring it's in utf-8 encoding
     arquivo_memoria = io.BytesIO(conteudo_final.encode('utf-8'))
-    
     return OfxParser.parse(arquivo_memoria)
 
 def processar_ofx():
@@ -121,7 +127,16 @@ def processar_ofx():
             
             ofx = ler_ofx_seguro(arquivo)
             conta = ofx.account
-            banco_nome = conta.institution.organization if conta.institution else "Banco Desconhecido"
+            banco_nome = conta.institution.organization if (conta and conta.institution and conta.institution.organization) else "Banco Desconhecido"
+
+            # Identificação alternativa de banco via nome de arquivo caso a tag venha genérica
+            if banco_nome == "Banco Desconhecido":
+                if "caixa" in nome_arquivo.lower():
+                    banco_nome = "Caixa Econômica"
+                elif "itau" in nome_arquivo.lower():
+                    banco_nome = "Itaú"
+                elif "inter" in nome_arquivo.lower():
+                    banco_nome = "Inter"
 
             # Code deprecated, used to validate the final results
             # =====================================================================
@@ -132,25 +147,28 @@ def processar_ofx():
             # print(f"\n[INFO] Conta {banco_nome} - Saldo em {data_saldo}: R$ {saldo_final}")
             # =====================================================================
 
-            for transacao in conta.statement.transactions:
-                # Keep original signals from the files ([+] -> Inflow; [-] -> Outflow)
-                valor_ofx = float(transacao.amount)
-                tipo = "Entrada" if valor_ofx > 0 else "Saída"
-                descricao = transacao.memo.strip()
-                cat = definir_categoria(descricao)
+            if conta and hasattr(conta, 'statement') and conta.statement and conta.statement.transactions:
+                for transacao in conta.statement.transactions:
+                    # Keep original signals from the files ([+] -> Inflow; [-] -> Outflow)
+                    valor_ofx = float(transacao.amount)
+                    tipo = "Entrada" if valor_ofx > 0 else "Saída"
+                    descricao = (transacao.memo or transacao.payee or "Transação sem descrição").strip()
+                    cat = definir_categoria(descricao)
 
-                data_real = transacao.date.replace(tzinfo=None)
+                    data_real = transacao.date
+                    if hasattr(data_real, 'tzinfo') and data_real.tzinfo:
+                        data_real = data_real.replace(tzinfo=None)
 
-                todas_transacoes.append({
-                    'Data': data_real,
-                    'Descrição': descricao,
-                    'Categoria': cat,
-                    'Tipo': tipo,
-                    'Valor': valor_ofx,
-                    'Meio de Pagamento': f'Conta - {banco_nome}',
-                    'Arquivo': nome_arquivo,
-                    'ID Transação': transacao.id 
-                })
+                    todas_transacoes.append({
+                        'Data': data_real,
+                        'Descrição': descricao,
+                        'Categoria': cat,
+                        'Tipo': tipo,
+                        'Valor': valor_ofx,
+                        'Meio de Pagamento': f'Conta - {banco_nome}',
+                        'Arquivo': nome_arquivo,
+                        'ID Transação': transacao.id 
+                    })
                 
         except Exception as e:
             tqdm.write(f"Erro no arquivo {arquivo}: {e}")
@@ -184,18 +202,6 @@ def processar_ofx():
             worksheet.set_column('E:E', 15, money_fmt)  # Amount column
         
         print(f"\n\nSucesso! Arquivo gerado: {output_file}")
-        
-        print("Movendo arquivos processados...")
-        for arquivo in arquivos_ofx:
-            nome_arquivo = os.path.basename(arquivo)
-            destino = os.path.join(PASTA_SAIDA, nome_arquivo)
-            
-            if os.path.exists(destino):
-                os.remove(destino)
-                
-            shutil.move(arquivo, destino)
-            
-        print(f"Arquivos movidos para a pasta '{PASTA_SAIDA}' com sucesso!")
 
     else:
         print("\nNenhuma transação encontrada nos arquivos OFX.")
