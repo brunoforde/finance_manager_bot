@@ -60,7 +60,8 @@ def run_pipeline():
             try:
                 parser_extratos_ofx.PASTA_ENTRADA = "."
                 parser_extratos_ofx.PASTA_SAIDA = "./processados_local"
-                parser_extratos_ofx.processar_ofx()
+                ##parser_extratos_ofx.processar_ofx()
+                arquivos_sucesso_ofx = parser_extratos_ofx.processar_ofx()
             finally:
                 os.chdir(pasta_original)
         else:
@@ -94,12 +95,18 @@ def run_pipeline():
         print("\nNenhum arquivo Excel gerado.")
 
     # 6. Mover arquivos originais para 'Processadas' no Drive
-    if processed_folder_id and arquivos_excel:
-        print("\n--- Movendo arquivos lidos para 'Processadas' no Drive ---")
-        for item in arquivos_drive:
-            print(f" -> Movendo: {item['name']}")
-            move_file(service, item['id'], input_folder_id, processed_folder_id)
+    for item in arquivos_drive:
+            nome_arquivo = item['name']
+            
+            # Se a lista de sucesso existir e o arquivo não estiver nela, mantém na entrada
+            if 'arquivos_sucesso_ofx' in locals() and nome_arquivo.lower().endswith('.ofx'):
+                if nome_arquivo not in arquivos_sucesso_ofx:
+                    print(f" -> MANTIDO NA ENTRADA (pendente/erro): {nome_arquivo}")
+                    continue
 
+            print(f" -> Movendo: {nome_arquivo}")
+            move_file(service, item['id'], input_folder_id, processed_folder_id)
+            
     # 7. Limpeza do ambiente temporário
     shutil.rmtree(PASTA_TMP_ENTRADA, ignore_errors=True)
     print("\nProcesso concluído com sucesso!")

@@ -81,16 +81,16 @@ def ler_ofx_seguro(caminho_arquivo):
 
     conteudo_final = '\n'.join(linhas_corrigidas)
 
-    # Injeta LEDGERBAL dummy caso o banco (ex: Caixa) não envie a tag antes do fechamento
-    if "<LEDGERBAL>" not in conteudo_final.upper() and "</STMTRS>" in conteudo_final.upper():
-        dummy_bal = """
-<LEDGERBAL>
-<BALAMT>0.00</BALAMT>
-<DTASOF>20260101</DTASOF>
-</LEDGERBAL>
-</STMTRS>
-"""
-        conteudo_final = re.sub(r'</STMTRS>', dummy_bal, conteudo_final, flags=re.IGNORECASE)
+    # Injeta LEDGERBAL dummy caso o banco (ex: Caixa) não envie a tag (suporta SGML e XML)
+    if "<LEDGERBAL>" not in conteudo_final.upper():
+        dummy_bal = "\n<LEDGERBAL>\n<BALAMT>0.00</BALAMT>\n<DTASOF>20260101</DTASOF>\n</LEDGERBAL>\n"
+        if "</STMTRS>" in conteudo_final.upper():
+            conteudo_final = re.sub(r'</STMTRS>', dummy_bal + "</STMTRS>", conteudo_final, flags=re.IGNORECASE)
+        elif "</BANKTRANLIST>" in conteudo_final.upper():
+            conteudo_final = re.sub(r'</BANKTRANLIST>', "</BANKTRANLIST>" + dummy_bal, conteudo_final, flags=re.IGNORECASE)
+        else:
+            # Padrão SGML puro da Caixa (sem tags de fechamento com barra)
+            conteudo_final += dummy_bal
 
     # 3. Convert data back to bytes after ensuring it's in utf-8 encoding
     arquivo_memoria = io.BytesIO(conteudo_final.encode('utf-8'))
@@ -109,6 +109,7 @@ def processar_ofx():
 
     todas_transacoes = []
     periodos_encontrados = set() 
+    processados_com_sucesso = []
     
     padrao_periodo = re.compile(r'(\d{2}[a-zA-Z]{3}-\d{2}[a-zA-Z]{3})')
 
@@ -169,7 +170,8 @@ def processar_ofx():
                         'Arquivo': nome_arquivo,
                         'ID Transação': transacao.id 
                     })
-                
+            processados_com_sucesso.append(nome_arquivo)  
+             
         except Exception as e:
             tqdm.write(f"Erro no arquivo {arquivo}: {e}")
 
