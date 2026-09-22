@@ -7,10 +7,10 @@ import io
 from ofxparse import OfxParser
 from tqdm import tqdm
 
-# ### Configs ###
+# --- CONFIGURAÇÕES ---
 
-PASTA_ENTRADA = "." # Removed the path to use the current folder for the running
-PASTA_SAIDA = "."
+PASTA_ENTRADA = "C:/Users/bruno.berlanga/Documents/Pess/extratos"
+PASTA_SAIDA = "C:/Users/bruno.berlanga/Documents/Pess/extratos/Processados"
 
 CATEGORIAS_DICT = {
     'Alimentação/Lazer': [
@@ -39,7 +39,7 @@ CATEGORIAS_DICT = {
 }
 
 def definir_categoria(descricao):
-    desc_upper = str(descricao).upper()
+    desc_upper = descricao.upper()
     for categoria, palavras_chave in CATEGORIAS_DICT.items():
         for palavra in palavras_chave:
             if palavra in desc_upper:
@@ -47,11 +47,12 @@ def definir_categoria(descricao):
     return "Outros"
 
 def ler_ofx_seguro(caminho_arquivo):
-    # 1. Opening the file
+    # 1. Lê o arquivo como bytes brutos (sem tentar decodificar ainda)
     with open(caminho_arquivo, 'rb') as f:
         raw_bytes = f.read()
         
-    # 2. Trying to decode and in case of error mark the enconding as latin-1 which is the other possibility mapped
+    # 2. Tenta decodificar. Se der o erro do 0xc1 (UnicodeDecodeError), 
+    # sabemos que o banco enviou como Latin-1.
     try:
         conteudo = raw_bytes.decode('utf-8')
     except UnicodeDecodeError:
@@ -68,10 +69,10 @@ def ler_ofx_seguro(caminho_arquivo):
         elif ':' in linha and not linha.startswith('<'):
             chave, valor = linha.split(':', 1)
             chave = chave.strip()
-            # Remove empty spaces (which could brake the extraction or give wrong data)
+            # Remove os espaços em branco que quebram a leitura
             valor = valor.strip().replace(' ', '')
             
-            # Convert to UTF-8
+            # Força o cabeçalho a dizer a verdade: vamos converter tudo para UTF-8 real
             if chave == 'ENCODING':
                 valor = 'UTF-8'
                 
@@ -81,19 +82,14 @@ def ler_ofx_seguro(caminho_arquivo):
 
     conteudo_final = '\n'.join(linhas_corrigidas)
 
-    # Injeta LEDGERBAL dummy caso o banco (ex: Caixa) não envie a tag antes do fechamento
-    if "<LEDGERBAL>" not in conteudo_final.upper() and "</STMTRS>" in conteudo_final.upper():
-        dummy_bal = """
-<LEDGERBAL>
-<BALAMT>0.00</BALAMT>
-<DTASOF>20260101</DTASOF>
-</LEDGERBAL>
-</STMTRS>
-"""
-        conteudo_final = re.sub(r'</STMTRS>', dummy_bal, conteudo_final, flags=re.IGNORECASE)
-
-    # 3. Convert data back to bytes after ensuring it's in utf-8 encoding
     arquivo_memoria = io.BytesIO(conteudo_final.encode('utf-8'))
+    
+    return OfxParser.parse(arquivo_memoria)
+    
+    # 3. O pulo do gato: Transforma o texto corrigido de volta em bytes, 
+    # mas agora garantindo que seja um UTF-8 real e perfeito.
+    arquivo_memoria = io.BytesIO(conteudo_final.encode('utf-8'))
+    
     return OfxParser.parse(arquivo_memoria)
 
 def processar_ofx():
@@ -127,48 +123,36 @@ def processar_ofx():
             
             ofx = ler_ofx_seguro(arquivo)
             conta = ofx.account
-            banco_nome = conta.institution.organization if (conta and conta.institution and conta.institution.organization) else "Banco Desconhecido"
-
-            # Identificação alternativa de banco via nome de arquivo caso a tag venha genérica
-            if banco_nome == "Banco Desconhecido":
-                if "caixa" in nome_arquivo.lower():
-                    banco_nome = "Caixa Econômica"
-                elif "itau" in nome_arquivo.lower():
-                    banco_nome = "Itaú"
-                elif "inter" in nome_arquivo.lower():
-                    banco_nome = "Inter"
-
-            # Code deprecated, used to validate the final results
+            banco_nome = conta.institution.organization if conta.institution else "Banco Desconhecido"
+            
             # =====================================================================
-            # EXTRAÇÃO DO SALDO FINAL DO EXTRATO - Total balance extraction
+            # CÓDIGO COMENTADO: EXTRAÇÃO DO SALDO FINAL DO EXTRATO
             # =====================================================================
             # saldo_final = conta.statement.balance
             # data_saldo = conta.statement.balance_date
             # print(f"\n[INFO] Conta {banco_nome} - Saldo em {data_saldo}: R$ {saldo_final}")
             # =====================================================================
 
-            if conta and hasattr(conta, 'statement') and conta.statement and conta.statement.transactions:
-                for transacao in conta.statement.transactions:
-                    # Keep original signals from the files ([+] -> Inflow; [-] -> Outflow)
-                    valor_ofx = float(transacao.amount)
-                    tipo = "Entrada" if valor_ofx > 0 else "Saída"
-                    descricao = (transacao.memo or transacao.payee or "Transação sem descrição").strip()
-                    cat = definir_categoria(descricao)
+            for transacao in conta.statement.transactions:
+                # Mantendo o sinal original do OFX: Positivo = Entrada, Negativo = Saída
+                valor_ofx = float(transacao.amount)
+                tipo = "Entrada" if valor_ofx > 0 else "Saída"
+                descricao = transacao.memo.strip()
+                cat = definir_categoria(descricao)
 
-                    data_real = transacao.date
-                    if hasattr(data_real, 'tzinfo') and data_real.tzinfo:
-                        data_real = data_real.replace(tzinfo=None)
+                # Mantém o objeto datetime puro (removendo fuso horário para não dar conflito no Excel)
+                data_real = transacao.date.replace(tzinfo=None)
 
-                    todas_transacoes.append({
-                        'Data': data_real,
-                        'Descrição': descricao,
-                        'Categoria': cat,
-                        'Tipo': tipo,
-                        'Valor': valor_ofx,
-                        'Meio de Pagamento': f'Conta - {banco_nome}',
-                        'Arquivo': nome_arquivo,
-                        'ID Transação': transacao.id 
-                    })
+                todas_transacoes.append({
+                    'Data': data_real,
+                    'Descrição': descricao,
+                    'Categoria': cat,
+                    'Tipo': tipo,
+                    'Valor': valor_ofx,
+                    'Meio de Pagamento': f'Conta - {banco_nome}',
+                    'Arquivo': nome_arquivo,
+                    'ID Transação': transacao.id 
+                })
                 
         except Exception as e:
             tqdm.write(f"Erro no arquivo {arquivo}: {e}")
@@ -190,18 +174,29 @@ def processar_ofx():
             workbook = writer.book
             worksheet = writer.sheets['Extrato_Bancario']
             
-            # Format amount/values 
+            # Formatações Visuais
             money_fmt = workbook.add_format({'num_format': '#,##0.00'})
-            # Format date
             date_fmt = workbook.add_format({'num_format': 'dd/mm/yyyy'})
             
-            # Set collumns layout in the spreadsheet
-            worksheet.set_column('A:A', 12, date_fmt)   # Date column
-            worksheet.set_column('B:B', 35)             # Description column
-            worksheet.set_column('C:C', 18)             # Category column
-            worksheet.set_column('E:E', 15, money_fmt)  # Amount column
+            # Ajustando a largura e o formato das colunas
+            worksheet.set_column('A:A', 12, date_fmt)   # Coluna Data
+            worksheet.set_column('B:B', 35)             # Coluna Descrição (mais larga para caber os textos)
+            worksheet.set_column('C:C', 18)             # Coluna Categoria
+            worksheet.set_column('E:E', 15, money_fmt)  # Coluna Valor
         
         print(f"\n\nSucesso! Arquivo gerado: {output_file}")
+        
+        print("Movendo arquivos processados...")
+        for arquivo in arquivos_ofx:
+            nome_arquivo = os.path.basename(arquivo)
+            destino = os.path.join(PASTA_SAIDA, nome_arquivo)
+            
+            if os.path.exists(destino):
+                os.remove(destino)
+                
+            shutil.move(arquivo, destino)
+            
+        print(f"Arquivos movidos para a pasta '{PASTA_SAIDA}' com sucesso!")
 
     else:
         print("\nNenhuma transação encontrada nos arquivos OFX.")
