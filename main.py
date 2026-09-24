@@ -96,15 +96,7 @@ def run_pipeline():
 
     # 6. Mover arquivos originais para 'Processadas' no Drive
     for item in arquivos_drive:
-            nome_arquivo = item['name']
-            
-            # Se a lista de sucesso existir e o arquivo não estiver nela, mantém na entrada
-            if 'arquivos_sucesso_ofx' in locals() and nome_arquivo.lower().endswith('.ofx'):
-                if nome_arquivo not in arquivos_sucesso_ofx:
-                    print(f" -> MANTIDO NA ENTRADA (pendente/erro): {nome_arquivo}")
-                    continue
-
-            print(f" -> Movendo: {nome_arquivo}")
+            print(f" -> Movendo: {item['name']}")
             move_file(service, item['id'], input_folder_id, processed_folder_id)
             
     # 7. Limpeza do ambiente temporário
